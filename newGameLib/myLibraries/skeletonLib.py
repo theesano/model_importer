@@ -158,93 +158,100 @@ class Skeleton:
 				if self.WARNING==True:
 					print 'WARNING: no parent for bone',name
 		self.armature.update()
-		
-		
-		
+				
 	def create_bone_position(self):
 		self.armature.makeEditable()
+		
+		# First pass: Set all bone heads and matrices
 		for m in range(len(self.boneList)):
-			name=self.boneList[m].name
-			rotMatrix=self.boneList[m].rotMatrix
-			posMatrix=self.boneList[m].posMatrix
-			scaleMatrix=self.boneList[m].scaleMatrix
-			matrix=self.boneList[m].matrix
+			name = self.boneList[m].name
+			rotMatrix = self.boneList[m].rotMatrix
+			posMatrix = self.boneList[m].posMatrix
+			matrix = self.boneList[m].matrix
 			bone = self.armature.bones[name]
+			
 			if matrix is not None:
-				if self.ARMATURESPACE==True:
-					bone.matrix=matrix					
-					if self.NICE==True:
-						bvec = bone.tail- bone.head
-						bvec.normalize()
-						bone.tail = bone.head + 0.01 * bvec
-				elif self.BONESPACE==True:
-					rotMatrix=matrix.rotationPart()
-					posMatrix=matrix.translationPart()
+				if self.BONESPACE == True:
+					rotMatrix = matrix.rotationPart()
+					posMatrix = matrix.translationPart()
 					if bone.parent:
-						bone.head =   posMatrix * bone.parent.matrix+bone.parent.head
+						bone.head = posMatrix * bone.parent.matrix + bone.parent.head
 						tempM = rotMatrix * bone.parent.matrix 
 						bone.matrix = tempM
 					else:
 						bone.head = posMatrix
 						bone.matrix = rotMatrix
-					if self.NICE==True:
-						bvec = bone.tail- bone.head
-						bvec.normalize()
-						bone.tail = bone.head + 0.01 * bvec  
-				elif self.INVERTSPACE==True:
-					rotMatrix=matrix.rotationPart()
-					posMatrix=matrix.translationPart()
-					posMatrix=posMatrix*rotMatrix.invert()
-					posMatrix.negate()
-					if bone.parent:
-						bone.head =   posMatrix
-						tempM = bone.parent.matrix*rotMatrix
-						bone.matrix = tempM
-					else:
-						bone.head = posMatrix
-						bone.matrix = rotMatrix
-					if self.NICE==True:
-						bvec = bone.tail- bone.head
-						bvec.normalize()
-						bone.tail = bone.head + 0.01 * bvec  	
 						
-				else:
-					if self.WARNING==True:
-						print 'ARMATUREPACE or BONESPACE ?'	
 			elif rotMatrix is not None and posMatrix is not None:
-				if self.ARMATURESPACE==True:
-					rotMatrix=roundMatrix(rotMatrix,4)
-					posMatrix=roundMatrix(posMatrix,4)
-					bone.matrix=rotMatrix*posMatrix
-					if self.NICE==True:
-						bvec = bone.tail- bone.head
-						bvec.normalize()
-						bone.tail = bone.head + 0.01 * bvec
-				elif self.BONESPACE==True:
-					rotMatrix=roundMatrix(rotMatrix,4).rotationPart()
-					posMatrix=roundMatrix(posMatrix,4).translationPart()
+				if self.BONESPACE == True:
+					rotMatrix = roundMatrix(rotMatrix, 4).rotationPart()
+					posMatrix = roundMatrix(posMatrix, 4).translationPart()
 					if bone.parent:
-						bone.head =   posMatrix * bone.parent.matrix+bone.parent.head
+						bone.head = posMatrix * bone.parent.matrix + bone.parent.head
 						tempM = rotMatrix * bone.parent.matrix 
 						bone.matrix = tempM
 					else:
 						bone.head = posMatrix
 						bone.matrix = rotMatrix
-					if self.NICE==True:
-						bvec = bone.tail- bone.head
-						bvec.normalize()
-						bone.tail = bone.head + 0.01 * bvec 
-				else:
-					if self.WARNING==True:
-						print 'ARMATUREPACE or BONESPACE ?'	
 			else:
-				if self.WARNING==True:
-					print 'WARNINIG: rotMatrix or posMatrix or matrix is None'
-							
+				if self.WARNING == True:
+					print 'WARNING: rotMatrix or posMatrix or matrix is None'
+		
+		# Second pass: Calculate proper tail positions
+		for m in range(len(self.boneList)):
+			name = self.boneList[m].name
+			bone = self.armature.bones[name]
+			boneData = self.boneList[m]
+			
+			# Check if this bone has children
+			if hasattr(boneData, 'children') and len(boneData.children) > 0:
+				if len(boneData.children) == 1:
+					# Only one child - point to it
+					childName = boneData.children[0].name
+					childBone = self.armature.bones[childName]
+					bone.tail = childBone.head
+					
+				else:
+					# Multiple children - find the closest one (usually the main chain)
+					bestChild = None
+					bestDistance = 999999.0
+					
+					for childData in boneData.children:
+						childName = childData.name
+						childBone = self.armature.bones[childName]
+						
+						# Calculate distance to child
+						toChild = childBone.head - bone.head
+						childDist = toChild.length
+						
+						# The closest child is usually the one continuing the bone chain
+						# Side branches (like thighs from spine) are usually further away
+						if childDist < bestDistance:
+							bestDistance = childDist
+							bestChild = childBone
+					
+					if bestChild is not None:
+						bone.tail = bestChild.head
+					else:
+						# Fallback - use default length
+						boneDir = bone.matrix.rotationPart() * Vector([0, 1, 0])
+						boneLength = 1.0
+						if bone.parent:
+							parentLength = (bone.parent.tail - bone.parent.head).length
+							boneLength = max(parentLength * 0.5, 0.1)
+						bone.tail = bone.head + boneDir.normalize() * boneLength
+			else:
+				# Leaf bone: use bone's Y-axis direction with appropriate length
+				boneDir = bone.matrix.rotationPart() * Vector([0, 1, 0])
+				boneLength = 1.0
+				if bone.parent:
+					parentLength = (bone.parent.tail - bone.parent.head).length
+					boneLength = max(parentLength * 0.5, 0.1)
+				
+				bone.tail = bone.head + boneDir.normalize() * boneLength
+		
 		self.armature.update()
-		Blender.Window.RedrawAll()
-		
-		
+		Blender.Window.RedrawAll()		
 		
 	def check(self):
 		scn = Blender.Scene.GetCurrent()

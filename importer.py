@@ -101,22 +101,51 @@ def modelParser(filename,g):
 					mesh.vertUVList.append(g.f(2))
 					g.seek(t+v[8])
 				mesh.indiceList=g.H(nFaces*3)
-			if name == 'LEKS':
+			if name == 'LEKS':  # Note: LEKS = SKEL reversed (little-endian read)
 				skeleton=Skeleton()
 				skeleton.BONESPACE=True
-				g.H(1)[0]
+				g.H(1)[0]  # version
 				nBones = g.H(1)[0]
+				
 				for m in range(nBones):
 					bone=Bone()
+					bone.ID = m  # Store bone index for child tracking
 					bone.name=g.word(g.i(1)[0])[-25:]
 					bone.parentID=g.h(1)[0]
-					g.f(3)
-					g.f(4)
-					bone.posMatrix=TranslationMatrix(Vector(g.f(3)))
-					qx,qy,qz,qw = g.f(4)
-					bone.rotMatrix=Quaternion(qw,qx,qy,qz).toMatrix().invert()
+					
+					# Read inverse object space (for skinning - skip for now)
+					inverseObjectPos = g.f(3)
+					inverseObjectQuat = g.f(4)
+					
+					# Read LOCAL SPACE transforms
+					localPos = g.f(3)
+					qx, qy, qz, qw = g.f(4)
+					
+					# Set matrices (same as original)
+					bone.posMatrix = TranslationMatrix(Vector(localPos))
+					bone.rotMatrix = Quaternion(qw, qx, qy, qz).toMatrix().invert()
+					
+					# Initialize empty children list
+					bone.children = []
+					
 					skeleton.boneList.append(bone)
-				skeleton.draw()	
+				
+				# Build child relationships after all bones are loaded
+				for bone in skeleton.boneList:
+					if bone.parentID != -1 and bone.parentID >= 0 and bone.parentID < len(skeleton.boneList):
+						parentBone = skeleton.boneList[bone.parentID]
+						parentBone.children.append(bone)
+						# Debug print to verify relationships
+						print "Child:", bone.name, "-> Parent:", parentBone.name
+				
+				# Debug: Print children for Bip01 Spine
+				for bone in skeleton.boneList:
+					if bone.name == 'Bip01 Spine':
+						print "\nBip01 Spine has", len(bone.children), "children:"
+						for child in bone.children:
+							print "  -", child.name
+				
+				skeleton.draw()
 			if name == 'THGW':
 				g.H(2)
 				skin=Skin()
